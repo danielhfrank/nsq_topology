@@ -15,8 +15,11 @@ class NSQData(object):
         self.nsqlookupd_addr = nsqlookupd_addr
         self._compiled_hostname_re = re.compile(hostname_regex)
 
-    def match_hostname(self, hostname):
+    def extract_host_class(self, hostname):
         return self._compiled_hostname_re.match(hostname).groups()[0]
+
+    def matches_hostname_regex(self, hostname):
+        return self._compiled_hostname_re.match(hostname) is not None
 
     def get_nodes(self):
         return requests.get(self.nsqlookupd_addr + '/nodes').json()['data']['producers']
@@ -32,15 +35,16 @@ class NSQData(object):
     def mk_channel_consumer_dict(self, topic_data):
         def gen():
             for chan in topic_data['channels']:
-                consumer_host_classes = set(self.match_hostname(cli['hostname'])
+                consumer_host_classes = set(self.extract_host_class(cli['hostname'])
                                             for cli in chan['clients'])
                 yield (chan['channel_name'], consumer_host_classes)
         return dict(gen())
 
     def get_stats_by_host_class(self):
-        nodes = self.get_nodes()
+        all_nodes = self.get_nodes()
+        nodes = filter(lambda node: self.matches_hostname_regex(node['hostname']), all_nodes)
         nodes_by_class = reduceby(
-            lambda node: self.match_hostname(node['hostname']), lambda x, y: x, nodes)
+            lambda node: self.extract_host_class(node['hostname']), lambda x, y: x, nodes)
         return dict((host_class, self.get_stats_dict(sample_host))
                     for host_class, sample_host in nodes_by_class.items())
 
